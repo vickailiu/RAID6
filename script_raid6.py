@@ -1,3 +1,4 @@
+# this is for testing the original script
 import file_ecc, os
 
 # from rs_code import RSCode
@@ -21,12 +22,10 @@ import file_ecc, os
 # fd2 = open(decodedFile,'rb')
 # fd1.read() == fd2.read()
 
-
-
 import raid6
 
-# raid6.init(6, 50*1024)
-# 
-# raid6.encode_file('ls')
+raid6.init(6, 50*1024)
+
+raid6.encode_file('ls')
 raid6.decode_file('ls', 'ls.r')
 print raid6.test('ls', 'ls.r')

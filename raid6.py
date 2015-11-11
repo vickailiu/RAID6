@@ -184,8 +184,8 @@ def decode_file(fname, out_name):
                 paras = parse_header(header)
                 n = int(paras[4])
                 k = int(paras[6])
-                file_size = int(paras[8])
-                block_size = int(paras[10])
+                file_size = int(long(paras[8]))
+                block_size = int(long(paras[10]))
                 code = RSCode(n, k, 8)
 
             partition_number = parse_header(header)[12][0]
