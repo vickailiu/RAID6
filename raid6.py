@@ -244,7 +244,7 @@ def decode_file(fname, out_name):
     drive_mapper = range(drive_no)
     if len(missing_drives) > 0:
         for i in range(len(missing_drives)):
-            recovered_drives[i] = os.path.join(cwd, drives_prefix, "drive_") + `drive_no+i`
+            recovered_drives[i] = os.path.join(os.getcwd(), drives_prefix, "drive_") + `drive_no+i`
             os.makedirs(recovered_drives[i])
             drive_mapper[missing_drives[i]] = drive_no+i
 
@@ -277,15 +277,15 @@ def decode_file(fname, out_name):
                     drive_index = missed_list[j]
                 else:
                     drive_index = missed_list[j] + 2
-                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.pt' + `i`, 'wb')
+                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.pt' + `i`, 'wb')
                 missed_blocks[j].write(header + `missed_list[j]` + '\n')
             elif missed_list[j] == part_no:
                 drive_index = index
-                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.p' + `i`, 'wb')
+                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.p' + `i`, 'wb')
                 missed_blocks[j].write(header + 'p' + `i` + '\n')
             else:
                 drive_index = index + 1
-                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.q' + `i`, 'wb')
+                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `i`, 'wb')
                 missed_blocks[j].write(header + 'q' + `i` + '\n')
 
         # decode and write to out_file
@@ -303,8 +303,13 @@ def decode_file(fname, out_name):
 
         i += 1
         recovered_size += block_size
-        for i in range(len(missed_list)):
-            missed_blocks[i].close()
+        for j in range(len(missed_list)):
+            missed_blocks[j].close()
+
+    if len(missing_drives) > 0:
+        print 'rename the replacement storage to failed storage name'
+        for i in range(len(missing_drives)):
+            os.rename(recovered_drives[i], os.path.join(os.getcwd(), drives_prefix, "drive_") + `missing_drives[i]`)
 
     return 0
 
