@@ -1,5 +1,5 @@
 # this is for testing the original script
-import file_ecc, os
+# import file_ecc, os
 
 # from rs_code import RSCode
 # from array import array
