@@ -1,0 +1,9 @@
+RAID 
+
+\subsection{RAID}
+
+\subsection{GS}
+
+\subsection{Reed-Solomen Coding}
+
+In general, there are two main strategies to guarantee certain level of fault-tolerance. The first is full duplication, where all storage nodes have a independent mirror backup. In case of access failure, the backup copy can be used. The advantage of such design is, for a single fault, data recovery takes exactly the same read as the original request, incurring no additional read overhead. However, it is less cost-efficient, using only $1/2$ of the total hardware effectively in data storage. The second is using erasure coding

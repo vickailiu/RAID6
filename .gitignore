@@ -57,3 +57,11 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Latex
+*.aux
+*.bbl
+*.bcf
+*.log
+*.synctex.gz
+*.blg
