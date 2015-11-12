@@ -129,7 +129,7 @@ def get_block_info(fnames,headers):
     return n,k,size,piece_nums
 
 
-def read_decode_and_write_block(write_size, in_files, out_file, code):
+def read_decode_and_write_block(write_size, in_files, out_file, code, missed_blocks, missed_list):
     buffer = array('B')
     for j in range(code.k):
         buffer.fromfile(in_files[j],1)
@@ -137,11 +137,13 @@ def read_decode_and_write_block(write_size, in_files, out_file, code):
     for j in range(write_size):
         out_file.write(struct.pack('B',result[j]))
 
+    if len(missed_list) > 0:
+        code_vec = code.encode(result)
+        for j in range(len(missed_list)):
+            missed_blocks[j].write(struct.pack('B', code_vec[missed_list[j]]))
 
-def decode_file(fname, out_name):
-    out_file = open(os.path.join(os.getcwd(), data_prefix, out_name), 'wb')
-
-    # scan for drives
+# scan for drives
+def get_drives():
     drives = [None]*256
     drives_count = 0
     listdir = os.listdir(os.path.join(os.getcwd(), drives_prefix))
@@ -151,54 +153,140 @@ def decode_file(fname, out_name):
             drives[drives_count] = drive_path
             drives_count += 1
 
-    n = 256
-    k = 256
-    file_size = Decimal('Infinity')
-    recovered_size = 0
-    block_size = -1
-    code = None
+    print 'Storage nodes available:'
+    for i in range(drives_count):
+        print '    ' + os.path.relpath(drives[i])
+    print ''
+    print ''
+    return drives[0:drives_count]
 
+
+# try get the infos from one of the available files
+def get_code_info(drives):
+    for i in range(len(drives)):
+        listfiles = os.listdir(drives[i])
+        for j in range(len(listfiles)):
+            file_path = os.path.join(drives[i], listfiles[j])
+            if os.path.isfile(file_path):
+                file = open(file_path, 'rb')
+                header = file.readline()
+                paras = parse_header(header)
+                file.close()
+                return int(paras[4]), int(paras[6]), int(long(paras[8])), int(long(paras[10]))
+
+
+def get_uncorrupted_blocks(fname, drives, drive_no, part_no, block_no):
+    block_file_list = [None]*len(drives)
+    dec_list = [None]*len(drives)
+    missed_list = range(drive_no)
+    un_corrupted_count = 0
+    for j in range(len(drives)):
+        # flexible way to find the files, it only depends on what was wrote in header file
+        part_file_name  = os.path.join(drives[j], fname) + '.pt' + `block_no`
+        xor_parity_name = os.path.join(drives[j], fname) + '.p' + `block_no`
+        rs_parity_name  = os.path.join(drives[j], fname) + '.q' + `block_no`
+        if os.path.exists(part_file_name):
+            file_name =  part_file_name
+        elif os.path.exists(xor_parity_name):
+            file_name = xor_parity_name
+        elif os.path.exists(rs_parity_name):
+            file_name = rs_parity_name
+        else:
+            continue
+
+        block_file = open(file_name, 'rb')
+        header = block_file.readline()
+        partition_number = parse_header(header)[12][0]
+        block_file_list[un_corrupted_count] = block_file
+        if partition_number == 'p':
+            dec_list[un_corrupted_count] = part_no
+        elif partition_number == 'q':
+            dec_list[un_corrupted_count] = part_no+1
+        else:
+            dec_list[un_corrupted_count] = int(partition_number)
+        missed_list.remove(dec_list[un_corrupted_count])
+        un_corrupted_count += 1
+
+    if len(block_file_list) < part_no:
+        print 'unable to recovery part: ' + `block_no+1` + ', too much blocks are missing'
+        return -1
+    else:
+        print 'found uncorrupted block:'
+        list = '    '
+        for s in range(len(dec_list)):
+            if dec_list[s] < part_no:
+                list += `dec_list[s]`
+            elif dec_list[s] == part_no:
+                list += 'p'
+            else:
+                list += 'q'
+            list += ', '
+        print list
+
+    return block_file_list[0:un_corrupted_count], dec_list[0:un_corrupted_count], missed_list
+
+
+def decode_file(fname, out_name):
+    out_file = open(os.path.join(os.getcwd(), data_prefix, out_name), 'wb')
+
+    drives = get_drives()
+    (drive_no, part_no, file_size, block_size) = get_code_info(drives)
+
+    # rebuild the failure drives, assuming the drives are drive_0, drive_1, drive_2, .... drive_(drive_no) previously
+    recovered_drives = [None]*(drive_no-len(drives))
+    missing_drives = range(drive_no)
+    for i in range(len(drives)):
+        number = int(drives[i][len(drives[i])-1])
+        missing_drives.remove(number)
+    assert len(missing_drives) == drive_no-len(drives)
+    print 'missing drive: ' + `missing_drives`
+    print 'create replacement storage node'
+    drive_mapper = range(drive_no)
+    if len(missing_drives) > 0:
+        for i in range(len(missing_drives)):
+            recovered_drives[i] = os.path.join(cwd, drives_prefix, "drive_") + `drive_no+i`
+            os.makedirs(recovered_drives[i])
+            drive_mapper[missing_drives[i]] = drive_no+i
+
+    # generate the code
+    code = RSCode(drive_no, part_no, 8)
+    # start to decode
+    recovered_size = 0
     i = 0
     while recovered_size < file_size:
-        block_file_list = [None]*drives_count
-        dec_list = [None]*drives_count
-        un_corrupted_count = 0
-        for j in range(drives_count):
-            # flexible way to find the files, it only depends on what was wrote in header file
-            part_file_name  = os.path.join(drives[j], fname) + '.pt' + `i`
-            xor_parity_name = os.path.join(drives[j], fname) + '.p' + `i`
-            rs_parity_name  = os.path.join(drives[j], fname) + '.q' + `i`
-            if os.path.exists(part_file_name):
-                file_name =  part_file_name
-            elif os.path.exists(xor_parity_name):
-                file_name = xor_parity_name
-            elif os.path.exists(rs_parity_name):
-                file_name = rs_parity_name
+        print 'trying to recover part ' + `i+1` + ' of ' + `int( math.ceil( float(file_size)/block_size) )` + '...'
+        (block_file_list, dec_list, missed_list) = get_uncorrupted_blocks(fname, drives, drive_no, part_no, i)
+        code.prepare_decoder(dec_list[0:min(len(dec_list), part_no)])
+
+        # initialize files to be recovered
+        # it could be either:
+        #   the entire storage node fails, which indicated in the missing_drives
+        #   the system need to get which block it is
+        # or
+        #   the storage node is fine but only a portion of it (multiple blocks) fails
+        missed_blocks = [None]*(len(missed_list))
+        index = 6 - i % (drive_no - 1)      # parity block index, used to determine the drive index
+        for j in range(len(missed_list)):
+            header = string.join(['RS_PARITY_PIECE_HEADER', 'FILE', fname,
+                                  'drive_no', `drive_no`, 'part_no', `part_no`,
+                                  'size', `file_size`, 'block_size', `block_size`,
+                                  'piece'],
+                                 hsep) + hsep
+            if missed_list[j] < part_no:    # it is one of the partitions
+                if missed_list[j] < index:
+                    drive_index = missed_list[j]
+                else:
+                    drive_index = missed_list[j] + 2
+                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.pt' + `i`, 'wb')
+                missed_blocks[j].write(header + `missed_list[j]` + '\n')
+            elif missed_list[j] == part_no:
+                drive_index = index
+                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.p' + `i`, 'wb')
+                missed_blocks[j].write(header + 'p' + `i` + '\n')
             else:
-                continue
-
-            block_file = open(file_name, 'rb')
-            header = block_file.readline()
-
-            if n == 256: # first time reading a block, setup the parameters
-                paras = parse_header(header)
-                n = int(paras[4])
-                k = int(paras[6])
-                file_size = int(long(paras[8]))
-                block_size = int(long(paras[10]))
-                code = RSCode(n, k, 8)
-
-            partition_number = parse_header(header)[12][0]
-            block_file_list[un_corrupted_count] = block_file
-            if partition_number == 'p':
-                dec_list[un_corrupted_count] = k
-            elif partition_number == 'q':
-                dec_list[un_corrupted_count] = k+1
-            else:
-                dec_list[un_corrupted_count] = int(partition_number)
-            un_corrupted_count += 1
-
-        code.prepare_decoder(dec_list[0:min(un_corrupted_count, k)])
+                drive_index = index + 1
+                missed_blocks[j] = open(os.path.join(cwd, drives_prefix, "drive_"+`drive_index`, fname) + '.q' + `i`, 'wb')
+                missed_blocks[j].write(header + 'q' + `i` + '\n')
 
         # decode and write to out_file
         if recovered_size + block_size <= file_size:
@@ -206,14 +294,20 @@ def decode_file(fname, out_name):
         else:
             decode_size = file_size % block_size
 
-        for j in range(0, (decode_size / k) * k, k):
-            read_decode_and_write_block(k, block_file_list, out_file, code)
+        for j in range(0, (decode_size / part_no) * part_no, part_no):
+            read_decode_and_write_block(part_no, block_file_list[0:min(len(dec_list), part_no)], out_file, code,
+                                        missed_blocks, missed_list)
+        if decode_size % part_no > 0:
+            read_decode_and_write_block(decode_size % part_no, block_file_list[0:min(len(dec_list), part_no)], out_file, code,
+                                        missed_blocks, missed_list)
 
-        if decode_size % k > 0:
-            read_decode_and_write_block(decode_size % k, block_file_list, out_file, code)
-
-        i+= 1
+        i += 1
         recovered_size += block_size
+        for i in range(len(missed_list)):
+            missed_blocks[i].close()
+
+    return 0
+
 
 def test(original_name, recovered_name):
     original = open(os.path.join(os.getcwd(), data_prefix, original_name), 'rb')

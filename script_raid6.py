@@ -24,8 +24,8 @@
 
 import raid6
 
-raid6.init(6, 50*1024)
+#raid6.init(6, 50*1024)
 
-raid6.encode_file('ls')
+#raid6.encode_file('ls')
 raid6.decode_file('ls', 'ls.r')
 print raid6.test('ls', 'ls.r')
