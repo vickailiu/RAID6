@@ -6,6 +6,7 @@ __pycache__/
 ffield.lut.8
 drives/*
 .idea/
+data/*
 
 # C extensions
 *.so
