@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 
 .DS_Store
+ffield.lut.8
+drives/*
+.idea/
+data/*
 
 # C extensions
 *.so
@@ -65,8 +69,7 @@ target/
 *.log
 *.synctex.gz
 *.blg
-*.pdf
-
+report/*.pdf
 # output
 drives/
 .idea/
