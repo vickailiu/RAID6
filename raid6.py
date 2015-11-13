@@ -40,8 +40,8 @@ def get_file_size(fname):
     return os.stat(fname)[6]
 
 
-def make_header(fname, size):
-    global hsep, drive_no, part_no, block_size
+def make_header(fname, size, drive_no, part_no, block_size):
+    global hsep
     return string.join(['RS_PARITY_PIECE_HEADER', 'FILE', fname,
                         'drive_no', `drive_no`, 'part_no', `part_no`, 'size', `size`, 'block_size', `block_size`, 'piece'],
                        hsep) + hsep
@@ -71,7 +71,7 @@ def encode_file(fname):
 
     in_file = open(in_file_name, 'rb')
     in_size = get_file_size(in_file_name)
-    header = make_header(fname, in_size)
+    header = make_header(fname, in_size, drive_no, part_no, block_size)
 
     code = RSCode(drive_no,part_no,8)
 
@@ -226,13 +226,8 @@ def get_uncorrupted_blocks(fname, drives, drive_no, part_no, block_no):
     return block_file_list[0:un_corrupted_count], dec_list[0:un_corrupted_count], missed_list
 
 
-def decode_file(fname, out_name):
-    out_file = open(os.path.join(os.getcwd(), data_prefix, out_name), 'wb')
-
-    drives = get_drives()
-    (drive_no, part_no, file_size, block_size) = get_code_info(drives)
-
-    # rebuild the failure drives, assuming the drives are drive_0, drive_1, drive_2, .... drive_(drive_no) previously
+# rebuild the failure drives, assuming the drives are drive_0, drive_1, drive_2, .... drive_(drive_no) previously
+def detect_rebuild_drives(drives, drive_no):
     recovered_drives = [None]*(drive_no-len(drives))
     missing_drives = range(drive_no)
     for i in range(len(drives)):
@@ -240,6 +235,7 @@ def decode_file(fname, out_name):
         missing_drives.remove(number)
     assert len(missing_drives) == drive_no-len(drives)
     print 'missing drive: ' + `missing_drives`
+
     print 'create replacement storage node'
     drive_mapper = range(drive_no)
     if len(missing_drives) > 0:
@@ -247,6 +243,32 @@ def decode_file(fname, out_name):
             recovered_drives[i] = os.path.join(os.getcwd(), drives_prefix, "drive_") + `drive_no+i`
             os.makedirs(recovered_drives[i])
             drive_mapper[missing_drives[i]] = drive_no+i
+    return recovered_drives, missing_drives, drive_mapper
+
+
+# initialize files to be recovered
+def create_recover_blocks(fname, missed_part_no, block_index, drive_mapper, parity_index, header):
+    if missed_part_no < part_no:    # it is one of the partitions
+        drive_index = missed_part_no if missed_part_no < parity_index else missed_part_no + 2
+        block = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.pt' + `block_index`, 'wb')
+        block.write(header + `missed_part_no` + '\n')
+    elif missed_part_no == part_no: # p partition
+        drive_index = parity_index
+        block = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.p' + `block_index`, 'wb')
+        block.write(header + 'p' + `block_index` + '\n')
+    else:                           # q partition
+        drive_index = parity_index + 1
+        block = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `block_index`, 'wb')
+        block.write(header + '1' + `block_index` + '\n')
+    return block
+
+
+def decode_file(fname, out_name):
+    out_file = open(os.path.join(os.getcwd(), data_prefix, out_name), 'wb')
+
+    drives = get_drives()
+    (drive_no, part_no, file_size, block_size) = get_code_info(drives)
+    (recovered_drives, missing_drives, drive_mapper) = detect_rebuild_drives(drives, drive_no)
 
     # generate the code
     code = RSCode(drive_no, part_no, 8)
@@ -259,34 +281,11 @@ def decode_file(fname, out_name):
         code.prepare_decoder(dec_list[0:min(len(dec_list), part_no)])
 
         # initialize files to be recovered
-        # it could be either:
-        #   the entire storage node fails, which indicated in the missing_drives
-        #   the system need to get which block it is
-        # or
-        #   the storage node is fine but only a portion of it (multiple blocks) fails
         missed_blocks = [None]*(len(missed_list))
         index = 6 - i % (drive_no - 1)      # parity block index, used to determine the drive index
         for j in range(len(missed_list)):
-            header = string.join(['RS_PARITY_PIECE_HEADER', 'FILE', fname,
-                                  'drive_no', `drive_no`, 'part_no', `part_no`,
-                                  'size', `file_size`, 'block_size', `block_size`,
-                                  'piece'],
-                                 hsep) + hsep
-            if missed_list[j] < part_no:    # it is one of the partitions
-                if missed_list[j] < index:
-                    drive_index = missed_list[j]
-                else:
-                    drive_index = missed_list[j] + 2
-                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.pt' + `i`, 'wb')
-                missed_blocks[j].write(header + `missed_list[j]` + '\n')
-            elif missed_list[j] == part_no:
-                drive_index = index
-                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.p' + `i`, 'wb')
-                missed_blocks[j].write(header + 'p' + `i` + '\n')
-            else:
-                drive_index = index + 1
-                missed_blocks[j] = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `i`, 'wb')
-                missed_blocks[j].write(header + 'q' + `i` + '\n')
+            header = make_header(fname, file_size, drive_no, part_no, block_size)
+            missed_blocks[j] = create_recover_blocks(fname, missed_list[j], i, drive_mapper, index, header)
 
         # decode and write to out_file
         if recovered_size + block_size <= file_size:
@@ -307,9 +306,11 @@ def decode_file(fname, out_name):
             missed_blocks[j].close()
 
     if len(missing_drives) > 0:
-        print 'rename the replacement storage to failed storage name'
-        for i in range(len(missing_drives)):
-            os.rename(recovered_drives[i], os.path.join(os.getcwd(), drives_prefix, "drive_") + `missing_drives[i]`)
+        var = raw_input("Do you want to rename the replacement storage back to failed storage name? (Y/N): ")
+        if (var == 'Y'):
+            for i in range(len(missing_drives)):
+                os.rename(recovered_drives[i], os.path.join(os.getcwd(), drives_prefix, "drive_") + `missing_drives[i]`)
+            print "done!"
 
     return 0
 
