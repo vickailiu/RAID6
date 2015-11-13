@@ -14,14 +14,3 @@ In this project, we implemented a minimal distributed storage system using open 
 
 
 The remaining part of this report is organized as the following: Background section introduces concepts and technologies that is relevant to the system design and development. System architecture and algorithms are covered in Implementation section. Experiment setup and results analysis are found in Experiment section, followed by conclusion.
-=======
-In distributed systems, data is partitioned and stored in storage devices (nodes) that are separated from each other in location. For example, in a small scale distributed system, a file could be stored in multiple hard disks. In large distributed systems, data segments could be stored in different data centers located in separate geographical locations. When a particular data is being accessed by an user, the system resembles data from partitions and response to the request. Logically, serving read and write request to a distributed file should be no different from accessing a local file, from user's perspective. Thus, storage resiliency is one of the most important considerations when designing a reliable and fault-tolerant distributed storage system. 
-
-The reliability is related to I/O speed and latency user may experience. It is subjected to system architecture, quality of hardware and communication channels. 
-
-The fault-tolerance of a system is system's capability of handling situations when the data segment needed is unavailable. Individual disk availability in a norm instead of an exception in distributed systems. Except hardware difficulties, a storage node goes unavailable during upgrading or when the workload is exceptionally high. In either cases, the system should be able to serve the data request without accessing the unavailable nodes.
-
-
- 
-In this project, we focus on the 
-
