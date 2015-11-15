@@ -13,13 +13,15 @@ drive_prefix = ''
 drives = ''
 drive_count = -1
 part_count = -1
+parity_count = -1
 block_size = -1
 
 
-def init(part_no_=6, size_=1024):
-    global test_file_dir, drive_prefix, drive_count, part_count, drives, block_size
-    drive_count = part_no_ + 2
+def init(part_no_=6, parity_no_=2, size_=1024):
+    global test_file_dir, drive_prefix, drive_count, part_count, parity_count, drives, block_size
+    drive_count = part_no_ + parity_no_
     part_count = part_no_
+    parity_count = parity_no_
     block_size = size_ * part_no_
 
     if drive_count > 256 or part_count <= 0:
@@ -37,7 +39,7 @@ def init(part_no_=6, size_=1024):
 
 
 def encode_file(fname):
-    global drive_count, part_count, drives, block_size
+    global drive_count, part_count, parity_count, drives, block_size, hsep
     in_file_name = os.path.join(test_file_dir, fname)
 
     in_file = open(in_file_name, 'rb')
@@ -49,23 +51,21 @@ def encode_file(fname):
     for i in range(int(math.ceil(float(in_size) / block_size))):
         out_parts = [file]*drive_count     # out_files[0~part_no-1]: partitions, out_files[part_no~drive_no-1]: parities
 
-        parity_index = 6 - i%(drive_count-1)      # parity block index
-        for j in range( parity_index ):
+        parity_index = part_count - i%(part_count+1)      # parity block index
+        for j in range(parity_index):
             out_part_name = os.path.join(drives[j], fname) + '.pt' + `i`
             out_parts[j] = open(out_part_name, 'wb')
             out_parts[j].write(header + `j` + '\n')
 
-        out_parts[part_count] = open(os.path.join(drives[parity_index], fname) + '.p' + `i`, 'wb')
-        out_parts[part_count].write(header + 'p' + `i` + '\n')
-        parity_index += 1
-        out_parts[part_count+1] = open(os.path.join(drives[parity_index], fname) + '.q' + `i`, 'wb')
-        out_parts[part_count+1].write(header + 'q' + `i` + '\n')
-        parity_index += 1
+        for j in range(parity_index, (parity_index + parity_count)):
+            out_part_name = os.path.join(drives[j], fname) + '.p' + `i`
+            out_parts[j] = open(out_part_name, 'wb')
+            out_parts[j].write(header + 'p' + `(j-parity_index)` + hsep + `i` + '\n')
 
-        for j in range(parity_index, drive_count):
+        for j in range((parity_index + parity_count), drive_count):
             out_part_name = os.path.join(drives[j], fname) + '.pt' + `i`
-            out_parts[j-2] = open(out_part_name, 'wb')
-            out_parts[j-2].write(header + `(j-2)` + '\n')
+            out_parts[j] = open(out_part_name, 'wb')
+            out_parts[j].write(header + `(j-parity_count)` + '\n')
 
         # calculate current block size
         if i < in_size / block_size:
@@ -104,7 +104,8 @@ def decode_file(fname, out_name):
 
         # initialize files to be recovered
         missed_parts= [None]*(len(missed_list))
-        index = 6 - i % (drive_count - 1)      # parity block index, used to determine the drive index
+        # index = 6 - i % (drive_count - 1)      # parity block index, used to determine the drive index
+        index = part_count - i % (part_count+1)      # parity block index
         for j in range(len(missed_list)):
             header = make_header(fname, file_size, drive_count, part_count, block_size)
             missed_parts[j] = create_recover_parts(fname, missed_list[j], part_count, i, drive_mapper, index, header)
@@ -257,14 +258,11 @@ def get_uncorrupted_parts(fname, drives, drive_count, part_count, block_no):
     for i in range(len(drives)):
         # flexible way to find the files, it only depends on what was wrote in header file
         part_file_name  = os.path.join(drives[i], fname) + '.pt' + `block_no`
-        xor_parity_name = os.path.join(drives[i], fname) + '.p' + `block_no`
-        rs_parity_name  = os.path.join(drives[i], fname) + '.q' + `block_no`
+        parity_name = os.path.join(drives[i], fname) + '.p' + `block_no`
         if os.path.exists(part_file_name):
             part_name =  part_file_name
-        elif os.path.exists(xor_parity_name):
-            part_name = xor_parity_name
-        elif os.path.exists(rs_parity_name):
-            part_name = rs_parity_name
+        elif os.path.exists(parity_name):
+            part_name = parity_name
         else:
             continue
 
@@ -274,9 +272,9 @@ def get_uncorrupted_parts(fname, drives, drive_count, part_count, block_no):
                                                        # partition or parity
         part_list[un_corrupted_count] = part_file
         if part_index == 'p':
-            dec_list[un_corrupted_count] = part_count
-        elif part_index == 'q':
-            dec_list[un_corrupted_count] = part_count+1
+            dec_list[un_corrupted_count] = part_count + int(parse_header(header)[12][1:])
+        # elif part_index == 'q':
+        #     dec_list[un_corrupted_count] = part_count+1
         else:
             dec_list[un_corrupted_count] = int(part_index)
         missed_list.remove(dec_list[un_corrupted_count])
@@ -291,10 +289,10 @@ def get_uncorrupted_parts(fname, drives, drive_count, part_count, block_no):
         for s in range(len(dec_list)):
             if dec_list[s] < part_count:
                 list += `dec_list[s]`
-            elif dec_list[s] == part_count:
-                list += 'p'
+            # elif dec_list[s] == part_count:
+            #     list += 'p'
             else:
-                list += 'q'
+                list += 'p' + `dec_list[s]`
             list += ', '
         print list
 
@@ -307,12 +305,13 @@ def create_recover_parts(fname, missed_part_no, part_count, block_index, drive_m
         drive_index = missed_part_no if missed_part_no < parity_index else missed_part_no + 2
         part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.pt' + `block_index`, 'wb')
         part.write(header + `missed_part_no` + '\n')
-    elif missed_part_no == part_count: # p partition
+    # elif missed_part_no == part_count: # p partition
+    else:
         drive_index = parity_index
         part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.p' + `block_index`, 'wb')
-        part.write(header + 'p' + `block_index` + '\n')
-    else:                           # q partition
-        drive_index = parity_index + 1
-        part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `block_index`, 'wb')
-        part.write(header + '1' + `block_index` + '\n')
+        part.write(header + 'p' + `missed_part_no` + hsep + `block_index` + '\n')
+    # else:                           # q partition
+    #     drive_index = parity_index + 1
+    #     part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `block_index`, 'wb')
+    #     part.write(header + '1' + `block_index` + '\n')
     return part
