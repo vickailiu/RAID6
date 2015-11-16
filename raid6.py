@@ -108,7 +108,7 @@ def decode_file(fname, out_name):
         index = part_count - i % (part_count+1)      # parity block index
         for j in range(len(missed_list)):
             header = make_header(fname, file_size, drive_count, part_count, block_size)
-            missed_parts[j] = create_recover_parts(fname, missed_list[j], part_count, i, drive_mapper, index, header)
+            missed_parts[j] = create_recover_parts(fname, missed_list[j], part_count, i, drive_mapper, index, header, drive_count)
 
         # decode and write to out_file
         if recovered_size + block_size <= file_size:
@@ -300,18 +300,14 @@ def get_uncorrupted_parts(fname, drives, drive_count, part_count, block_no):
 
 
 # initialize files to be recovered
-def create_recover_parts(fname, missed_part_no, part_count, block_index, drive_mapper, parity_index, header):
+def create_recover_parts(fname, missed_part_no, part_count, block_index, drive_mapper, parity_index, header, drive_count):
     if missed_part_no < part_count:    # it is one of the partitions
-        drive_index = missed_part_no if missed_part_no < parity_index else missed_part_no + 2
+        drive_index = missed_part_no if missed_part_no < parity_index else missed_part_no + drive_count - part_count
         part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.pt' + `block_index`, 'wb')
         part.write(header + `missed_part_no` + '\n')
     # elif missed_part_no == part_count: # p partition
     else:
-        drive_index = parity_index
+        drive_index = missed_part_no + parity_index - part_count
         part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.p' + `block_index`, 'wb')
         part.write(header + 'p' + `missed_part_no` + hsep + `block_index` + '\n')
-    # else:                           # q partition
-    #     drive_index = parity_index + 1
-    #     part = open(os.path.join(os.getcwd(), drives_prefix, "drive_"+`drive_mapper[drive_index]`, fname) + '.q' + `block_index`, 'wb')
-    #     part.write(header + '1' + `block_index` + '\n')
     return part
