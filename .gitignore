@@ -4,7 +4,6 @@ __pycache__/
 
 .DS_Store
 ffield.lut.8
-drives/*
 .idea/
 data/*
 
