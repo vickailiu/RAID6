@@ -10,6 +10,15 @@ class RSCode:
         self.encoder_matrix = genericmatrix.GenericMatrix((n, k), 0, 1,
                                                           self.field.Add, self.field.Subtract,
                                                           self.field.Multiply, self.field.Divide)
+        # in the class, we used the 2 parities:
+        # to achieve it in python:
+        # for i in range(k):
+        #     self.encoderMatrix[i, i] = 1
+        # for i in range(k):
+        #     self.encoderMatrix[k, i] = 1
+        #     self.encoderMatrix[k+1, i] = int(math.pow(2, k-1-i))
+        # then based on https://msdn.microsoft.com/en-us/library/cc245263.aspx
+        # Vandermonde Matrix is more generalised and could be used to unable more flexible partition and parity setup
         self.encoder_matrix[0, 0] = 1
         for i in range(0, n):
             term = 1
