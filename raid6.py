@@ -96,7 +96,6 @@ def decode_file(fname, out_name):
         print 'trying to recover part ' + repr(i+1) + \
                                  ' of ' + repr(int(math.ceil(float(file_size)/block_size))) + '...'
         (block_file_list, dec_list, missed_list) = get_uncorrupted_parts(fname, drives, drive_count, part_count, i)
-        code.prepare_decoder(dec_list[0:min(len(dec_list), part_count)])
 
         # initialize files to be recovered
         missed_parts = [None]*(len(missed_list))
@@ -106,19 +105,35 @@ def decode_file(fname, out_name):
                                                   i, drive_mapper, header)
 
         # decode and write to out_file
+        # there are mainly two cases:
+        # if all the partitions are uncorrupted, then to retrieve the data, we only need to concatenate the data
+        # and possibly to recover some of the corrupted parities
+        # if there are partitions that are messing, then we need to recover them, then recover the corrupted parities
         if recovered_size + block_size <= file_size:
             decode_size = block_size
         else:
             decode_size = file_size % block_size
 
-        for j in range(0, (decode_size / part_count) * part_count, part_count):
-            read_decode_and_write_block(part_count, block_file_list[0:min(len(dec_list), part_count)],
-                                        out_file, code,
-                                        missed_parts, missed_list)
-        if decode_size % part_count > 0:
-            read_decode_and_write_block(decode_size % part_count, block_file_list[0:min(len(dec_list), part_count)],
-                                        out_file, code,
-                                        missed_parts, missed_list)
+        partition_parts = try_get_partitions(block_file_list, dec_list, part_count)
+        if partition_parts is not None:
+            print 'all the partitions are good, concatenating the files'
+            for j in range(0, (decode_size / part_count) * part_count, part_count):
+                concatenate_and_write_block(part_count, partition_parts, out_file,
+                                            code, missed_parts, missed_list)
+            if decode_size % part_count > 0:
+                concatenate_and_write_block(decode_size % part_count, partition_parts, out_file,
+                                            code, missed_parts, missed_list)
+        else:
+            print 'some of the partitions are corrupted, decoding from what we have'
+            code.prepare_decoder(dec_list[0:min(len(dec_list), part_count)])
+            for j in range(0, (decode_size / part_count) * part_count, part_count):
+                read_decode_and_write_block(part_count, block_file_list[0:min(len(dec_list), part_count)],
+                                            out_file, code,
+                                            missed_parts, missed_list)
+            if decode_size % part_count > 0:
+                read_decode_and_write_block(decode_size % part_count, block_file_list[0:min(len(dec_list), part_count)],
+                                            out_file, code,
+                                            missed_parts, missed_list)
 
         for j in range(len(missed_list)):
             missed_parts[j].close()
@@ -269,7 +284,7 @@ def get_uncorrupted_parts(fname, drives, drive_count, part_count, block_no):
     else:
         print 'found uncorrupted parts:'
         list = '    '
-        for s in range(len(dec_list)):
+        for s in range(un_corrupted_count):
             if dec_list[s] < part_count:
                 list += repr(dec_list[s])
             else:
@@ -303,6 +318,16 @@ def create_recover_part(fname, missed_part_no, drive_count, part_count, block_in
     return part
 
 
+def try_get_partitions(part_list, dec_list, part_count):
+    partition_list = [str]*part_count
+    for i in range(part_count):
+        if i in dec_list:
+            partition_list[i] = part_list[dec_list.index(i)]
+        else:
+            return None
+    return partition_list
+
+
 def read_encode_and_write_block(read_size, in_file, out_files, code):
     buffer = array('B')
     buffer.fromfile(in_file, read_size)
@@ -327,5 +352,18 @@ def read_decode_and_write_block(write_size, in_parts, out_file, code, missed_par
 
     if len(missed_list) > 0:
         code_vec = code.encode(result)
+        for i in range(len(missed_list)):
+            missed_parts[i].write(pack('B', code_vec[missed_list[i]]))
+
+
+def concatenate_and_write_block(write_size, in_parts, out_file, code, missed_parts, missed_list):
+    buffer = array('B')
+    for i in range(len(in_parts)):
+        buffer.fromfile(in_parts[i], 1)
+    for i in range(write_size):
+        out_file.write(pack('B', buffer[i]))
+
+    if len(missed_list) > 0:
+        code_vec = code.encode(buffer)
         for i in range(len(missed_list)):
             missed_parts[i].write(pack('B', code_vec[missed_list[i]]))
