@@ -25,6 +25,8 @@ class RSCode:
             for j in range(0, k):
                 self.encoder_matrix[i, j] = term
                 term = self.field.Multiply(term, i+1)
+        # Then use Gaussian-Jordan elimination method to convert the first k rows of generator matrix
+        # to an identity matrix, in order to make decoding and recovery easier.
         self.encoder_matrix.Transpose()
         self.encoder_matrix.LowerGaussianElim()
         self.encoder_matrix.UpperInverse()
