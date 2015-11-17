@@ -143,7 +143,8 @@ def decode_file(fname, out_name):
         print ''
 
     if len(missing_drives) > 0:
-        var = raw_input("Do you want to rename the replacement storage back to failed storage name? (Y/N): ")
+        # var = raw_input("Do you want to rename the replacement storage back to failed storage name? (Y/N): ")
+        var = 'Y'
         if var == 'Y':
             for i in range(len(missing_drives)):
                 os.rename(recovered_drives[i], os.path.join(os.getcwd(), drives_dir, "drive_" + repr(missing_drives[i])))
